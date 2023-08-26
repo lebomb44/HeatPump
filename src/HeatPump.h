@@ -1,18 +1,3 @@
-/*
-  HeatPump.h - Mitsubishi Heat Pump control library for Arduino
-  Copyright (c) 2017 Al Betschart.  All right reserved.
-  This library is free software; you can redistribute it and/or
-  modify it under the terms of the GNU Lesser General Public
-  License as published by the Free Software Foundation; either
-  version 2.1 of the License, or (at your option) any later version.
-  This library is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  Lesser General Public License for more details.
-  You should have received a copy of the GNU Lesser General Public
-  License along with this library; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-*/
 #ifndef __HeatPump_H__
 #define __HeatPump_H__
 #include <stdint.h>
@@ -22,25 +7,6 @@
 #include "Arduino.h"
 #else
 #include "WProgram.h"
-#endif
-
-/* 
- * Callback function definitions. Code differs for the ESP8266 platform, which requires the functional library.
- * Based on callback implementation in the Arduino Client for MQTT library (https://github.com/knolleary/pubsubclient)
- */
-#if defined(ESP8266) || defined(ESP32)
-#include <functional>
-#define ON_CONNECT_CALLBACK_SIGNATURE std::function<void()> onConnectCallback
-#define SETTINGS_CHANGED_CALLBACK_SIGNATURE std::function<void()> settingsChangedCallback
-#define STATUS_CHANGED_CALLBACK_SIGNATURE std::function<void(heatpumpStatus newStatus)> statusChangedCallback
-#define PACKET_CALLBACK_SIGNATURE std::function<void(byte* packet, unsigned int length, char* packetDirection)> packetCallback
-#define ROOM_TEMP_CHANGED_CALLBACK_SIGNATURE std::function<void(float currentRoomTemperature)> roomTempChangedCallback
-#else
-#define ON_CONNECT_CALLBACK_SIGNATURE void (*onConnectCallback)()
-#define SETTINGS_CHANGED_CALLBACK_SIGNATURE void (*settingsChangedCallback)()
-#define STATUS_CHANGED_CALLBACK_SIGNATURE void (*statusChangedCallback)(heatpumpStatus newStatus)
-#define PACKET_CALLBACK_SIGNATURE void (*packetCallback)(byte* packet, unsigned int length, char* packetDirection)
-#define ROOM_TEMP_CHANGED_CALLBACK_SIGNATURE void (*roomTempChangedCallback)(float currentRoomTemperature)
 #endif
 
 typedef uint8_t byte;
@@ -221,13 +187,6 @@ class HeatPump
     void prepareInfoPacket(byte* packet, int length);
     void prepareSetPacket(byte* packet, int length);
 
-    // callbacks
-    ON_CONNECT_CALLBACK_SIGNATURE {nullptr};
-    SETTINGS_CHANGED_CALLBACK_SIGNATURE {nullptr};
-    STATUS_CHANGED_CALLBACK_SIGNATURE {nullptr};
-    PACKET_CALLBACK_SIGNATURE {nullptr};
-    ROOM_TEMP_CHANGED_CALLBACK_SIGNATURE {nullptr};
-
   public:
     // indexes for INFOMODE array (public so they can be optionally passed to sync())
     const int RQST_PKT_SETTINGS  = 0;
@@ -283,13 +242,6 @@ class HeatPump
     // helpers
     float FahrenheitToCelsius(int tempF);
     int CelsiusToFahrenheit(float tempC);
-
-    // callbacks
-    void setOnConnectCallback(ON_CONNECT_CALLBACK_SIGNATURE);
-    void setSettingsChangedCallback(SETTINGS_CHANGED_CALLBACK_SIGNATURE);
-    void setStatusChangedCallback(STATUS_CHANGED_CALLBACK_SIGNATURE);
-    void setPacketCallback(PACKET_CALLBACK_SIGNATURE);
-    void setRoomTempChangedCallback(ROOM_TEMP_CHANGED_CALLBACK_SIGNATURE); // need to deprecate this, is available from setStatusChangedCallback
 
     // expert users only!
     void sendCustomPacket(byte data[], int len); 

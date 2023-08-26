@@ -1,84 +1,10 @@
-/*
-  HeatPump.cpp - Mitsubishi Heat Pump control library for Arduino
-  Copyright (c) 2017 Al Betschart.  All right reserved.
-
-  This library is free software; you can redistribute it and/or
-  modify it under the terms of the GNU Lesser General Public
-  License as published by the Free Software Foundation; either
-  version 2.1 of the License, or (at your option) any later version.
-
-  This library is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  Lesser General Public License for more details.
-
-  You should have received a copy of the GNU Lesser General Public
-  License along with this library; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-*/
 #include "HeatPump.h"
-
-// Structures //////////////////////////////////////////////////////////////////
-
-bool operator==(const heatpumpSettings& lhs, const heatpumpSettings& rhs) {
-  return lhs.power == rhs.power && 
-         lhs.mode == rhs.mode && 
-         lhs.temperature == rhs.temperature && 
-         lhs.fan == rhs.fan &&
-         lhs.vane == rhs.vane &&
-         lhs.wideVane == rhs.wideVane &&
-         lhs.iSee == rhs.iSee; 
-}
-
-bool operator!=(const heatpumpSettings& lhs, const heatpumpSettings& rhs) {
-  return lhs.power != rhs.power || 
-         lhs.mode != rhs.mode || 
-         lhs.temperature != rhs.temperature || 
-         lhs.fan != rhs.fan ||
-         lhs.vane != rhs.vane ||
-         lhs.wideVane != rhs.wideVane ||
-         lhs.iSee != rhs.iSee;
-}
-
-bool operator!(const heatpumpSettings& settings) {
-  return !settings.power && 
-         !settings.mode && 
-         !settings.temperature && 
-         !settings.fan &&
-         !settings.vane &&
-         !settings.wideVane &&
-         !settings.iSee;
-}
-
-bool operator==(const heatpumpTimers& lhs, const heatpumpTimers& rhs) {
-  return lhs.mode                == rhs.mode && 
-         lhs.onMinutesSet        == rhs.onMinutesSet &&
-         lhs.onMinutesRemaining  == rhs.onMinutesRemaining &&
-         lhs.offMinutesSet       == rhs.offMinutesSet &&
-         lhs.offMinutesRemaining == rhs.offMinutesRemaining; 
-}
-
-bool operator!=(const heatpumpTimers& lhs, const heatpumpTimers& rhs) {
-  return lhs.mode                != rhs.mode || 
-         lhs.onMinutesSet        != rhs.onMinutesSet ||
-         lhs.onMinutesRemaining  != rhs.onMinutesRemaining ||
-         lhs.offMinutesSet       != rhs.offMinutesSet ||
-         lhs.offMinutesRemaining != rhs.offMinutesRemaining;
-}
-
 
 // Constructor /////////////////////////////////////////////////////////////////
 
 HeatPump::HeatPump() {
-  lastWanted = millis();
-  lastSend = 0;
   infoMode = 0;
-  lastRecv = millis() - (PACKET_SENT_INTERVAL_MS * 10);
-  autoUpdate = false;
-  firstRun = true;
   tempMode = false;
-  waitForRead = false;
-  externalUpdate = false;
   wideVaneAdj = false;
   functions = heatpumpFunctions();
 }
@@ -86,39 +12,10 @@ HeatPump::HeatPump() {
 // Public Methods //////////////////////////////////////////////////////////////
 
 bool HeatPump::connect(HardwareSerial *serial) {
-  return connect(serial, -1, -1);
-}
-
-bool HeatPump::connect(HardwareSerial *serial, int bitrate) {
-	return connect(serial, bitrate, -1, -1);
-}
-
-bool HeatPump::connect(HardwareSerial *serial, int rx, int tx) {
-	return connect(serial, 0, rx, tx);
-}
-
-bool HeatPump::connect(HardwareSerial *serial, int bitrate, int rx, int tx) {
   if(serial != NULL) {
     _HardSerial = serial;
   }
-  bool retry = false;
-  if(bitrate == 0) {
-    bitrate = 2400;
-    retry = true;
-  }
-  connected = false;
-  if (rx >= 0 && tx >= 0) {
-#if defined(ESP32)    
-    _HardSerial->begin(bitrate, SERIAL_8E1, rx, tx);
-#else
-    _HardSerial->begin(bitrate, SERIAL_8E1);
-#endif    
-  } else {
-    _HardSerial->begin(bitrate, SERIAL_8E1);
-  }
-  if(onConnectCallback) {
-    onConnectCallback();
-  }
+  _HardSerial->begin(2400, SERIAL_8E1);
   
   // settle before we start sending packets
   delay(2000);
@@ -128,97 +25,23 @@ bool HeatPump::connect(HardwareSerial *serial, int bitrate, int rx, int tx) {
   memcpy(packet, CONNECT, CONNECT_LEN);
   //for(int count = 0; count < 2; count++) {
   writePacket(packet, CONNECT_LEN);
-  while(!canRead()) { delay(10); }
-  int packetType = readPacket();
-  if(packetType != RCVD_PKT_CONNECT_SUCCESS && retry){
-	  return connect(serial, 9600, rx, tx);
-  }
-  return packetType == RCVD_PKT_CONNECT_SUCCESS;
-  //}
+  return true;
 }
 
 bool HeatPump::update() {
-  while(!canSend(false)) { delay(10); }
-
-  // Flush the serial buffer before updating settings to clear out
-  // any remaining responses that would prevent us from receiving
-  // RCVD_PKT_UPDATE_SUCCESS
   readAllPackets();
 
   byte packet[PACKET_LEN] = {};
-  createPacket(packet, wantedSettings);
+  createPacket(packet, currentSettings);
   writePacket(packet, PACKET_LEN);
-
-  while(!canRead()) { delay(10); }
-  int packetType = readPacket();
-
-  if(packetType == RCVD_PKT_UPDATE_SUCCESS) {
-    // call sync() to get the latest settings from the heatpump for autoUpdate, which should now have the updated settings
-    if(autoUpdate) { //this sync will happen regardless, but autoUpdate needs it sooner than later.
-	    while(!canSend(true)) {
-		    delay(10);
-	    }
-	    sync(RQST_PKT_SETTINGS);
-    } else {
-      // No auto update, but the next time we sync, fetch the updated settings first
-      infoMode = 0;
-    }
-
-    return true;
-  } else {
-    return false;
-  }
+  return true;
 }
 
 void HeatPump::sync(byte packetType) {
-  if((!connected) || (millis() - lastRecv > (PACKET_SENT_INTERVAL_MS * 10))) {
-    connect(NULL);
-  }
-  else if(canRead()) {
-    readAllPackets();
-  }
-  else if(autoUpdate && !firstRun && wantedSettings != currentSettings && packetType == PACKET_TYPE_DEFAULT) {
-    update();
-  }
-  else if(canSend(true)) {
-    byte packet[PACKET_LEN] = {};
-    createInfoPacket(packet, packetType);
-    writePacket(packet, PACKET_LEN);
-  }
-}
-
-void HeatPump::enableExternalUpdate() {
-  autoUpdate = true;
-  externalUpdate = true;
-}
-
-void HeatPump::disableExternalUpdate() {
-  externalUpdate = false;
-}
-
-void HeatPump::enableAutoUpdate() {
-  autoUpdate = true;
-}
-
-void HeatPump::disableAutoUpdate() {
-  autoUpdate = false;
-}
-
-heatpumpSettings HeatPump::getSettings() {
-  return currentSettings;
-}
-
-bool HeatPump::isConnected() {
-  return connected;
-}
-
-void HeatPump::setSettings(heatpumpSettings settings) {
-  setPowerSetting(settings.power);
-  setModeSetting(settings.mode);
-  setTemperature(settings.temperature);
-  setFanSpeed(settings.fan);
-  setVaneSetting(settings.vane);
-  setWideVaneSetting(settings.wideVane);
+  readAllPackets();
+  byte packet[PACKET_LEN] = {};
+  createInfoPacket(packet, packetType);
+  writePacket(packet, PACKET_LEN);
 }
 
 bool HeatPump::getPowerSettingBool() {
@@ -226,8 +49,7 @@ bool HeatPump::getPowerSettingBool() {
 }
 
 void HeatPump::setPowerSetting(bool setting) {
-  wantedSettings.power = lookupByteMapIndex(POWER_MAP, 2, POWER_MAP[setting ? 1 : 0]) > -1 ? POWER_MAP[setting ? 1 : 0] : POWER_MAP[0];
-  lastWanted = millis();
+  currentSettings.power = lookupByteMapIndex(POWER_MAP, 2, POWER_MAP[setting ? 1 : 0]) > -1 ? POWER_MAP[setting ? 1 : 0] : POWER_MAP[0];
 }
 
 const char* HeatPump::getPowerSetting() {
@@ -237,11 +59,10 @@ const char* HeatPump::getPowerSetting() {
 void HeatPump::setPowerSetting(const char* setting) {
   int index = lookupByteMapIndex(POWER_MAP, 2, setting);
   if (index > -1) {
-    wantedSettings.power = POWER_MAP[index];
+    currentSettings.power = POWER_MAP[index];
   } else {
-    wantedSettings.power = POWER_MAP[0];
+    currentSettings.power = POWER_MAP[0];
   }
-  lastWanted = millis();
 }
 
 const char* HeatPump::getModeSetting() {
@@ -251,11 +72,10 @@ const char* HeatPump::getModeSetting() {
 void HeatPump::setModeSetting(const char* setting) {
   int index = lookupByteMapIndex(MODE_MAP, 5, setting);
   if (index > -1) {
-    wantedSettings.mode = MODE_MAP[index];
+    currentSettings.mode = MODE_MAP[index];
   } else {
-    wantedSettings.mode = MODE_MAP[0];
+    currentSettings.mode = MODE_MAP[0];
   }
-  lastWanted = millis();
 }
 
 float HeatPump::getTemperature() {
@@ -264,57 +84,27 @@ float HeatPump::getTemperature() {
 
 void HeatPump::setTemperature(float setting) {
   if(!tempMode){
-    wantedSettings.temperature = lookupByteMapIndex(TEMP_MAP, 16, (int)(setting + 0.5)) > -1 ? setting : TEMP_MAP[0];
+    currentSettings.temperature = lookupByteMapIndex(TEMP_MAP, 16, (int)(setting + 0.5)) > -1 ? setting : TEMP_MAP[0];
   }
   else {
     setting = setting * 2;
     setting = round(setting);
     setting = setting / 2;
-    wantedSettings.temperature = setting < 10 ? 10 : (setting > 31 ? 31 : setting);
+    currentSettings.temperature = setting < 10 ? 10 : (setting > 31 ? 31 : setting);
   }
-  lastWanted = millis();
-}
-
-void HeatPump::setRemoteTemperature(float setting) {
-  byte packet[PACKET_LEN] = {};
-  
-  prepareSetPacket(packet, PACKET_LEN);
-  
-  packet[5] = 0x07;
-  if(setting > 0) {
-    packet[6] = 0x01;
-    setting = setting * 2;
-    setting = round(setting);
-    setting = setting / 2;
-    float temp1 = 3 + ((setting - 10) * 2);
-    packet[7] = (int)temp1;
-    float temp2 = (setting * 2) + 128;
-    packet[8] = (int)temp2;
-  }
-  else {
-    packet[6] = 0x00;
-    packet[8] = 0x80; //MHK1 send 80, even though it could be 00, since ControlByte is 00
-  } 
-  // add the checksum
-  byte chkSum = checkSum(packet, 21);
-  packet[21] = chkSum;
-  while(!canSend(false)) { delay(10); }
-  writePacket(packet, PACKET_LEN);
 }
 
 const char* HeatPump::getFanSpeed() {
   return currentSettings.fan;
 }
 
-
 void HeatPump::setFanSpeed(const char* setting) {
   int index = lookupByteMapIndex(FAN_MAP, 6, setting);
   if (index > -1) {
-    wantedSettings.fan = FAN_MAP[index];
+    currentSettings.fan = FAN_MAP[index];
   } else {
-    wantedSettings.fan = FAN_MAP[0];
+    currentSettings.fan = FAN_MAP[0];
   }
-  lastWanted = millis();
 }
 
 const char* HeatPump::getVaneSetting() {
@@ -324,11 +114,10 @@ const char* HeatPump::getVaneSetting() {
 void HeatPump::setVaneSetting(const char* setting) {
   int index = lookupByteMapIndex(VANE_MAP, 7, setting);
   if (index > -1) {
-    wantedSettings.vane = VANE_MAP[index];
+    currentSettings.vane = VANE_MAP[index];
   } else {
-    wantedSettings.vane = VANE_MAP[0];
+    currentSettings.vane = VANE_MAP[0];
   }
-  lastWanted = millis();
 }
 
 const char* HeatPump::getWideVaneSetting() {
@@ -338,11 +127,10 @@ const char* HeatPump::getWideVaneSetting() {
 void HeatPump::setWideVaneSetting(const char* setting) {
   int index = lookupByteMapIndex(WIDEVANE_MAP, 7, setting);
   if (index > -1) {
-    wantedSettings.wideVane = WIDEVANE_MAP[index];
+    currentSettings.wideVane = WIDEVANE_MAP[index];
   } else {
-    wantedSettings.wideVane = WIDEVANE_MAP[0];
+    currentSettings.wideVane = WIDEVANE_MAP[0];
   }
-  lastWanted = millis();
 }
 
 bool HeatPump::getIseeBool() { //no setter yet
@@ -369,47 +157,6 @@ float HeatPump::FahrenheitToCelsius(int tempF) {
 int HeatPump::CelsiusToFahrenheit(float tempC) {
   float temp = (tempC * 1.8) + 32;                //round up if heat, down if cool or any other mode
   return (int)(temp + 0.5);
-}
-
-void HeatPump::setOnConnectCallback(ON_CONNECT_CALLBACK_SIGNATURE) {
-  this->onConnectCallback = onConnectCallback;
-}
-
-void HeatPump::setSettingsChangedCallback(SETTINGS_CHANGED_CALLBACK_SIGNATURE) {
-  this->settingsChangedCallback = settingsChangedCallback;
-}
-
-void HeatPump::setStatusChangedCallback(STATUS_CHANGED_CALLBACK_SIGNATURE) {
-  this->statusChangedCallback = statusChangedCallback;
-}
-
-void HeatPump::setPacketCallback(PACKET_CALLBACK_SIGNATURE) {
-  this->packetCallback = packetCallback;
-}
-
-void HeatPump::setRoomTempChangedCallback(ROOM_TEMP_CHANGED_CALLBACK_SIGNATURE) {
-  this->roomTempChangedCallback = roomTempChangedCallback;
-}
-
-//#### WARNING, THE FOLLOWING METHOD CAN F--K YOUR HP UP, USE WISELY ####
-void HeatPump::sendCustomPacket(byte data[], int packetLength) {
-  while(!canSend(false)) { delay(10); }
-
-  packetLength += 2; // +2 for first header byte and checksum
-  packetLength = (packetLength > PACKET_LEN) ? PACKET_LEN : packetLength; // ensure we are not exceeding PACKET_LEN
-  byte packet[packetLength];
-  packet[0] = HEADER[0]; // add first header byte
-
-  // add data
-  for (int i = 0; i < packetLength; i++) {
-    packet[(i+1)] = data[i]; 
-  }
-
-  // add checksum
-  byte chkSum = checkSum(packet, (packetLength-1));
-  packet[(packetLength-1)] = chkSum;
-
-  writePacket(packet, packetLength);
 }
 
 // Private Methods //////////////////////////////////////////////////////////////
@@ -449,14 +196,6 @@ int HeatPump::lookupByteMapValue(const int valuesMap[], const byte byteMap[], in
     }
   }
   return valuesMap[0];
-}
-
-bool HeatPump::canSend(bool isInfo) {
-  return (millis() - (isInfo ? PACKET_INFO_INTERVAL_MS : PACKET_SENT_INTERVAL_MS)) > lastSend;
-}  
-
-bool HeatPump::canRead() {
-  return (waitForRead && (millis() - PACKET_SENT_INTERVAL_MS) > lastSend);
 }
 
 byte HeatPump::checkSum(byte bytes[], int len) {
@@ -537,12 +276,6 @@ void HeatPump::writePacket(byte *packet, int length) {
   for (int i = 0; i < length; i++) {
      _HardSerial->write((uint8_t)packet[i]);
   }
-
-  if(packetCallback) {
-    packetCallback(packet, length, (char*)"packetSent");
-  }
-  waitForRead = true;
-  lastSend = millis();
 }
 
 int HeatPump::readPacket() {
@@ -552,8 +285,6 @@ int HeatPump::readPacket() {
   int dataSum = 0;
   byte checksum = 0;
   byte dataLength = 0;
-  
-  waitForRead = false;
 
   if(_HardSerial->available() > 0) {
     // read until we get start byte 0xfc
@@ -600,17 +331,6 @@ int HeatPump::readPacket() {
 
       if(data[dataLength] == checksum) {
         lastRecv = millis();
-        if(packetCallback) {
-          byte packet[37]; // we are going to put header[5] and data[32] into this, so the whole packet is sent to the callback
-          for(int i=0; i<INFOHEADER_LEN; i++) {
-            packet[i] = header[i];
-          }
-          for(int i=0; i<(dataLength+1); i++) { //must be dataLength+1 to pick up checksum byte
-            packet[(i+5)] = data[i];
-          }
-          packetCallback(packet, PACKET_LEN, (char*)"packetRecv");
-        }
-
         if(header[1] == 0x62) {
           switch(data[0]) {
             case 0x02: { // setting information
@@ -631,22 +351,9 @@ int HeatPump::readPacket() {
               receivedSettings.fan         = lookupByteMapValue(FAN_MAP, FAN, 6, data[6]);
               receivedSettings.vane        = lookupByteMapValue(VANE_MAP, VANE, 7, data[7]);
               receivedSettings.wideVane    = lookupByteMapValue(WIDEVANE_MAP, WIDEVANE, 7, data[10] & 0x0F);
-		    wideVaneAdj = (data[10] & 0xF0) == 0x80 ? true : false;
+		          wideVaneAdj = (data[10] & 0xF0) == 0x80 ? true : false;
               
-              if(settingsChangedCallback && receivedSettings != currentSettings) {
-                currentSettings = receivedSettings;
-                settingsChangedCallback();
-              } else {
-                currentSettings = receivedSettings;
-              }
-
-              // if this is the first time we have synced with the heatpump, set wantedSettings to receivedSettings
-              // hack: add grace period of a few seconds before respecting external changes
-              if(firstRun || (autoUpdate && externalUpdate && millis() - lastWanted > AUTOUPDATE_GRACE_PERIOD_IGNORE_EXTERNAL_UPDATES_MS)) {
-                wantedSettings = currentSettings;
-                firstRun = false;
-              }
-
+              currentSettings = receivedSettings;
               return RCVD_PKT_SETTINGS;
             }
 
@@ -661,19 +368,7 @@ int HeatPump::readPacket() {
                 receivedStatus.roomTemperature = lookupByteMapValue(ROOM_TEMP_MAP, ROOM_TEMP, 32, data[3]);
               }
 
-              if((statusChangedCallback || roomTempChangedCallback) && currentStatus.roomTemperature != receivedStatus.roomTemperature) {
-                currentStatus.roomTemperature = receivedStatus.roomTemperature;
-
-                if(statusChangedCallback) {
-                  statusChangedCallback(currentStatus);
-                }
-
-                if(roomTempChangedCallback) { // this should be deprecated - statusChangedCallback covers it
-                  roomTempChangedCallback(currentStatus.roomTemperature);
-                }
-              } else {
-                currentStatus.roomTemperature = receivedStatus.roomTemperature;
-              }
+              currentStatus.roomTemperature = receivedStatus.roomTemperature;
 
               return RCVD_PKT_ROOM_TEMP;
             }
@@ -691,13 +386,7 @@ int HeatPump::readPacket() {
               receivedTimers.offMinutesSet       = data[5] * TIMER_INCREMENT_MINUTES;
               receivedTimers.offMinutesRemaining = data[7] * TIMER_INCREMENT_MINUTES;
 
-              // callback for status change
-              if(statusChangedCallback && currentStatus.timers != receivedTimers) {
-                currentStatus.timers = receivedTimers;
-                statusChangedCallback(currentStatus);
-              } else {
-                currentStatus.timers = receivedTimers;
-              }
+              currentStatus.timers = receivedTimers;
 
               return RCVD_PKT_TIMER;
             }
@@ -707,15 +396,8 @@ int HeatPump::readPacket() {
               receivedStatus.operating = data[4];
               receivedStatus.compressorFrequency = data[3];
 
-              // callback for status change -- not triggered for compressor frequency at the moment
-              if(statusChangedCallback && currentStatus.operating != receivedStatus.operating) {
-                currentStatus.operating = receivedStatus.operating;
-                currentStatus.compressorFrequency = receivedStatus.compressorFrequency;
-                statusChangedCallback(currentStatus);
-              } else {
-                currentStatus.operating = receivedStatus.operating;
-                currentStatus.compressorFrequency = receivedStatus.compressorFrequency;
-              }
+              currentStatus.operating = receivedStatus.operating;
+              currentStatus.compressorFrequency = receivedStatus.compressorFrequency;
 
               return RCVD_PKT_STATUS;
             }
@@ -789,11 +471,9 @@ heatpumpFunctions HeatPump::getFunctions() {
   packet2[5] = FUNCTIONS_GET_PART2;
   packet2[21] = checkSum(packet2, 21);
   
-  while(!canSend(false)) { delay(10); }
   writePacket(packet1, PACKET_LEN);
   readPacket();
 
-  while(!canSend(false)) { delay(10); }
   writePacket(packet2, PACKET_LEN);
   readPacket();
 
@@ -837,11 +517,9 @@ bool HeatPump::setFunctions(heatpumpFunctions const& functions) {
   packet1[21] = checkSum(packet1, 21);
   packet2[21] = checkSum(packet2, 21);
 
-  while(!canSend(false)) { delay(10); }
   writePacket(packet1, PACKET_LEN);
   readPacket();
 
-  while(!canSend(false)) { delay(10); }
   writePacket(packet2, PACKET_LEN);
   readPacket();
 
@@ -927,12 +605,4 @@ heatpumpFunctionCodes heatpumpFunctions::getAllCodes() {
   }
 
   return result;
-}
-
-bool heatpumpFunctions::operator==(const heatpumpFunctions& rhs) {
-  return this->isValid() == rhs.isValid() && memcmp(this->raw, rhs.raw, MAX_FUNCTION_CODE_COUNT * sizeof(int)) == 0;
-}
-
-bool heatpumpFunctions::operator!=(const heatpumpFunctions& rhs) {
-  return !(*this==rhs);
 }

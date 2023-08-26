@@ -3,11 +3,6 @@
 #include <stdint.h>
 #include <math.h>
 #include <HardwareSerial.h>
-#if defined(ARDUINO) && ARDUINO >= 100
-#include "Arduino.h"
-#else
-#include "WProgram.h"
-#endif
 
 typedef uint8_t byte;
 
@@ -21,9 +16,6 @@ struct heatpumpSettings {
   bool iSee;   //iSee sensor, at the moment can only detect it, not set it
   bool connected;
 };
-
-bool operator==(const heatpumpSettings& lhs, const heatpumpSettings& rhs);
-bool operator!=(const heatpumpSettings& lhs, const heatpumpSettings& rhs);
 
 struct heatpumpTimers {
   const char* mode;
@@ -77,8 +69,6 @@ class heatpumpFunctions  {
 
     heatpumpFunctionCodes getAllCodes();   
 
-    bool operator==(const heatpumpFunctions& rhs);
-    bool operator!=(const heatpumpFunctions& rhs);
 };
 
 class HeatPump
@@ -88,7 +78,6 @@ class HeatPump
     static const int PACKET_SENT_INTERVAL_MS = 1000;
     static const int PACKET_INFO_INTERVAL_MS = 2000;
     static const int PACKET_TYPE_DEFAULT = 99;
-    static const int AUTOUPDATE_GRACE_PERIOD_IGNORE_EXTERNAL_UPDATES_MS = 30000;
 
     static const int CONNECT_LEN = 8;
     const byte CONNECT[CONNECT_LEN] = {0xfc, 0x5a, 0x01, 0x30, 0x02, 0xca, 0x01, 0xa8};
@@ -97,8 +86,7 @@ class HeatPump
 
     static const int INFOHEADER_LEN  = 5;
     const byte INFOHEADER[INFOHEADER_LEN]  = {0xfc, 0x42, 0x01, 0x30, 0x10};
-    
- 
+
     static const int INFOMODE_LEN = 6;
     const byte INFOMODE[INFOMODE_LEN] = {
       0x02, // request a settings packet - RQST_PKT_SETTINGS
@@ -150,9 +138,6 @@ class HeatPump
 
     // these settings will be initialised in connect()
     heatpumpSettings currentSettings {};
-    heatpumpSettings wantedSettings {};
-    // Hacks
-    unsigned long lastWanted;
 
     // initialise to all off, then it will update shortly after connect;
     heatpumpStatus currentStatus {0, false, {TIMER_MODE_MAP[0], 0, 0, 0, 0}, 0};
@@ -160,15 +145,8 @@ class HeatPump
     heatpumpFunctions functions;
   
     HardwareSerial * _HardSerial {nullptr};
-    unsigned long lastSend;
-    bool waitForRead;
     int infoMode;
-    unsigned long lastRecv;
-    bool connected = false;
-    bool autoUpdate;
-    bool firstRun;
     bool tempMode;
-    bool externalUpdate;
     bool wideVaneAdj;
 
     const char* lookupByteMapValue(const char* valuesMap[], const byte byteMap[], int len, byte byteValue);
@@ -176,8 +154,6 @@ class HeatPump
     int    lookupByteMapIndex(const char* valuesMap[], int len, const char* lookupValue);
     int    lookupByteMapIndex(const int valuesMap[], int len, int lookupValue);
 
-    bool canSend(bool isInfo);
-    bool canRead();
     byte checkSum(byte bytes[], int len);
     void createPacket(byte *packet, heatpumpSettings settings);
     void createInfoPacket(byte *packet, byte packetType);
@@ -198,19 +174,10 @@ class HeatPump
     // general
     HeatPump();
     bool connect(HardwareSerial *serial);
-    bool connect(HardwareSerial *serial, int bitrate);
-    bool connect(HardwareSerial *serial, int rx, int tx);
-    bool connect(HardwareSerial *serial, int bitrate, int rx, int tx);
     bool update();
-    void sync(byte packetType = PACKET_TYPE_DEFAULT);
-    void enableExternalUpdate();
-    void disableExternalUpdate();
-    void enableAutoUpdate();
-    void disableAutoUpdate();
+    void sync();
 
     // settings
-    heatpumpSettings getSettings();
-    void setSettings(heatpumpSettings settings);
     void setPowerSetting(bool setting);
     bool getPowerSettingBool(); 
     const char* getPowerSetting();
@@ -219,7 +186,6 @@ class HeatPump
     void setModeSetting(const char* setting);
     float getTemperature();
     void setTemperature(float setting);
-    void setRemoteTemperature(float setting);
     const char* getFanSpeed();
     void setFanSpeed(const char* setting);
     const char* getVaneSetting();
@@ -242,9 +208,5 @@ class HeatPump
     // helpers
     float FahrenheitToCelsius(int tempF);
     int CelsiusToFahrenheit(float tempC);
-
-    // expert users only!
-    void sendCustomPacket(byte data[], int len); 
-
 };
 #endif

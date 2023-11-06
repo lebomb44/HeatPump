@@ -138,6 +138,7 @@ class HeatPump
 
     // these settings will be initialised in connect()
     heatpumpSettings currentSettings {};
+    heatpumpSettings wantedSettings {};
 
     // initialise to all off, then it will update shortly after connect;
     heatpumpStatus currentStatus {0, false, {TIMER_MODE_MAP[0], 0, 0, 0, 0}, 0};
@@ -156,7 +157,7 @@ class HeatPump
 
     byte checkSum(byte bytes[], int len);
     void createPacket(byte *packet, heatpumpSettings settings);
-    void createInfoPacket(byte *packet, byte packetType);
+    void createInfoPacket(byte *packet);
     int readPacket();
     void readAllPackets();
     void writePacket(byte *packet, int length);

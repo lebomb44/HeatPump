@@ -1,5 +1,6 @@
-#include <HeatPump.h>
+#include "src/HeatPump.h"
 #include <CnC.h>
+#include <stdlib.h>
 
 HeatPump hp;
 
@@ -26,8 +27,8 @@ uint32_t currentTime = 0;
 void ping_cmdGet(int arg_cnt, char **args) { cnc_print_cmdGet_u32(pingName, currentTime); }
 void power_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) {hp.setPowerSetting(args[3]); hp.update(); } }
 void mode_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) {hp.setModeSetting(args[3]); hp.update(); } }
-void temp_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) {hp.setTemperature(args[3]); hp.update(); } }
-void fanspeed_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) {hp.setFanSpeed(args[3]); hp.update(); } }
+void temp_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) { hp.setTemperature(atof(args[3])); hp.update(); } }
+void fanSpeed_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) {hp.setFanSpeed(args[3]); hp.update(); } }
 
 void setup() {
   hp.connect(&Serial1);

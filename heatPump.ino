@@ -31,8 +31,6 @@ void temp_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) { hp.setTemperature(
 void fanSpeed_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) {hp.setFanSpeed(args[3]); hp.update(); } }
 
 void setup() {
-  hp.connect(&Serial1);
-
   Serial.begin(115200);
   cncInit(nodeName);
   cnc_hkName_set(hkName);
@@ -46,13 +44,19 @@ void setup() {
   cnc_cmdSet_Add(fanSpeedName, fanSpeed_cmdSet);
 
   previousTime_10s = millis();
+
+  pinMode(18, OUTPUT);
+  pinMode(19, INPUT_PULLUP);
+  hp.connect(&Serial1);
+  delay(1000);
 }
 
 void loop() {
   currentTime = millis(); cncPoll();
   /* HK @ 0.1Hz */
-  if((uint32_t)(currentTime - previousTime_10s) >= 10000) {
+  if((uint32_t)(currentTime - previousTime_10s) >= 2000) {
     hp.sync();
+    
     cnc_print_hk_str(powerName, hp.getPowerSetting());
     cnc_print_hk_str(modeName, hp.getModeSetting());
     cnc_print_hk_float(tempName, hp.getTemperature());
@@ -62,6 +66,7 @@ void loop() {
     cnc_print_hk_bool(iseeName, hp.getIseeBool());
     cnc_print_hk_float(roomTempName, hp.getRoomTemperature());
     cnc_print_hk_bool(operatingName, hp.getOperating());
+    
     previousTime_10s = currentTime;
   }
 }

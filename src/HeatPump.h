@@ -85,6 +85,7 @@ class HeatPump
     const byte HEADER[HEADER_LEN]  = {0xfc, 0x41, 0x01, 0x30, 0x10, 0x01, 0x00, 0x00};
 
     static const int INFOHEADER_LEN  = 5;
+    //OCM const byte INFOHEADER[INFOHEADER_LEN]  = {0xfc, 0x42, 0x02, 0x7A, 0x10};
     const byte INFOHEADER[INFOHEADER_LEN]  = {0xfc, 0x42, 0x01, 0x30, 0x10};
 
     static const int INFOMODE_LEN = 6;
@@ -209,5 +210,6 @@ class HeatPump
     // helpers
     float FahrenheitToCelsius(int tempF);
     int CelsiusToFahrenheit(float tempC);
+    void printAllPackets();
 };
 #endif

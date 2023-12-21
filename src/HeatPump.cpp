@@ -24,7 +24,7 @@ bool HeatPump::connect(HardwareSerial *serial) {
   // send the CONNECT packet twice - need to copy the CONNECT packet locally
   byte packet[CONNECT_LEN];
   memcpy(packet, CONNECT, CONNECT_LEN);
-  //for(int count = 0; count < 2; count++) {
+
   writePacket(packet, CONNECT_LEN);
   return true;
 }
@@ -39,6 +39,7 @@ bool HeatPump::update() {
 
 void HeatPump::sync() {
   readAllPackets();
+  //OCM printAllPackets();
   byte packet[PACKET_LEN] = {};
   createInfoPacket(packet);
   writePacket(packet, PACKET_LEN);
@@ -279,6 +280,9 @@ void HeatPump::createInfoPacket(byte *packet) {
 void HeatPump::writePacket(byte *packet, int length) {
   for (int i = 0; i < length; i++) {
      _HardSerial->write((uint8_t)packet[i]);
+  }
+  Serial.print("Send: ");
+  for (int i = 0; i < length; i++) {
      if ((uint8_t)packet[i] < 16) { Serial.print("0"); }
      Serial.print((uint8_t)packet[i], HEX);
      Serial.print(" ");
@@ -295,26 +299,22 @@ int HeatPump::readPacket() {
   byte dataLength = 0;
 
   if(_HardSerial->available() > 0) {
-    Serial.println("readPacket");
     // read until we get start byte 0xfc
     while(_HardSerial->available() > 0 && !foundStart) {
       header[0] = _HardSerial->read();
-      Serial.println(header[0], HEX);
       if(header[0] == HEADER[0]) {
         foundStart = true;
-        delay(100); // found that this delay increases accuracy when reading, might not be needed though
+        //delay(100); // found that this delay increases accuracy when reading, might not be needed though
       }
     }
 
     if(!foundStart) {
       return RCVD_PKT_FAIL;
     }
-    
     //read header
     for(int i=1;i<5;i++) {
       header[i] =  _HardSerial->read();
     }
-    
     //check header
     if(header[0] == HEADER[0] && header[2] == HEADER[2] && header[3] == HEADER[3]) {
       dataLength = header[4];
@@ -338,7 +338,6 @@ int HeatPump::readPacket() {
   
       // calculate checksum
       checksum = (0xfc - dataSum) & 0xff;
-
       if(data[dataLength] == checksum) {
         if(header[1] == 0x62) {
           switch(data[0]) {
@@ -447,6 +446,18 @@ void HeatPump::readAllPackets() {
   while (_HardSerial->available() > 0) {
     readPacket();
   }
+}
+
+void HeatPump::printAllPackets() {
+  byte b = 0;
+  Serial.print("Received:                                                                   ");
+  while (_HardSerial->available() > 0) {
+    b = _HardSerial->read();
+    if ((uint8_t)b < 16) { Serial.print("0"); }
+    Serial.print((uint8_t)b, HEX);
+    Serial.print(" ");
+  }
+  Serial.println();
 }
 
 void HeatPump::prepareInfoPacket(byte* packet, int length) {

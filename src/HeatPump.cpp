@@ -66,8 +66,6 @@ void HeatPump::setPowerSetting(const char* setting) {
   } else {
     wantedSettings.power = POWER_MAP[0];
   }
-  Serial.print("POWER=");
-  Serial.println(wantedSettings.power);
 }
 
 const char* HeatPump::getModeSetting() {
@@ -281,13 +279,6 @@ void HeatPump::writePacket(byte *packet, int length) {
   for (int i = 0; i < length; i++) {
      _HardSerial->write((uint8_t)packet[i]);
   }
-  Serial.print("Send: ");
-  for (int i = 0; i < length; i++) {
-     if ((uint8_t)packet[i] < 16) { Serial.print("0"); }
-     Serial.print((uint8_t)packet[i], HEX);
-     Serial.print(" ");
-  }
-  Serial.println();
 }
 
 int HeatPump::readPacket() {

@@ -2,6 +2,8 @@
 #include <CnC.h>
 #include <stdlib.h>
 
+#define TIC_MAX_MSG_SIZE 25
+
 HeatPump hp;
 
 const char nodeName[] PROGMEM = "heatpump";
@@ -21,17 +23,24 @@ const char iseeName[] PROGMEM = "isee";
 const char roomTempName[] PROGMEM = "roomtemp";
 const char operatingName[] PROGMEM = "operating";
 
+const char baseName[] PROGMEM = "BASE";
+const char iinstName[] PROGMEM = "IINST";
+const char pappName[] PROGMEM = "PAPP";
+
+char tic_msg[TIC_MAX_MSG_SIZE] = {0};
+uint8_t tic_msg_index = 0;
+
 uint32_t previousTime_10s = 0;
 uint32_t currentTime = 0;
 
 void ping_cmdGet(int arg_cnt, char **args) { cnc_print_cmdGet_u32(pingName, currentTime); }
-void power_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) {hp.setPowerSetting(args[3]); hp.update(); } }
-void mode_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) {hp.setModeSetting(args[3]); hp.update(); } }
+void power_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) { hp.setPowerSetting(args[3]); hp.update(); } }
+void mode_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) { hp.setModeSetting(args[3]); hp.update(); } }
 void temp_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) { hp.setTemperature(atof(args[3])); hp.update(); } }
-void fanSpeed_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) {hp.setFanSpeed(args[3]); hp.update(); } }
+void fanSpeed_cmdSet(int arg_cnt, char **args) { if(4==arg_cnt) { hp.setFanSpeed(args[3]); hp.update(); } }
 
 void setup() {
-  Serial.begin(115200);
+  //Serial.begin(115200);
   cncInit(nodeName);
   cnc_hkName_set(hkName);
   cnc_cmdGetName_set(cmdGetName);
@@ -49,11 +58,18 @@ void setup() {
   pinMode(19, INPUT_PULLUP);
   hp.connect(&Serial1);
   delay(1000);
+  Serial.begin(115200);
+
+  tic_msg_index = 0;
+  pinMode(16, OUTPUT);
+  pinMode(17, INPUT_PULLUP);
+  Serial2.begin(1200, SERIAL_7E1);
+  Serial2.setTimeout(0);
 }
 
 void loop() {
   currentTime = millis(); cncPoll();
-  /* HK @ 0.1Hz */
+  /* HK @ 0.5Hz */
   if((uint32_t)(currentTime - previousTime_10s) >= 2000) {
     hp.sync();
     
@@ -68,5 +84,34 @@ void loop() {
     cnc_print_hk_bool(operatingName, hp.getOperating());
     
     previousTime_10s = currentTime;
+  }
+  while (Serial2.available() > 0) {
+    char c = Serial2.read();
+    switch (c) {
+      case '\r':
+      case '\n':
+        tic_msg[tic_msg_index] = '\0';
+        if (0 == strncmp_P(tic_msg, baseName, strnlen_P(baseName, 50))) {
+          tic_msg[14] = 0;
+          cnc_print_hk_str(baseName, &tic_msg[5]);
+        }
+        if (0 == strncmp_P(tic_msg, iinstName, strnlen_P(iinstName, 50))) {
+          tic_msg[9] = 0;
+          cnc_print_hk_str(iinstName, &tic_msg[6]);
+        }
+        if (0 == strncmp_P(tic_msg, pappName, strnlen_P(pappName, 50))) {
+          tic_msg[10] = 0;
+          cnc_print_hk_str(pappName, &tic_msg[5]);
+        }
+        tic_msg_index = 0;
+        break;
+      default:
+        // normal character entered. add it to the buffer
+        if((TIC_MAX_MSG_SIZE-1) > tic_msg_index) {
+            tic_msg[tic_msg_index] = c;
+            tic_msg_index++;
+        }
+        break;
+    }
   }
 }

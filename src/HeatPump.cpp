@@ -34,6 +34,8 @@ bool HeatPump::update() {
   byte packet[PACKET_LEN] = {};
   createPacket(packet, wantedSettings);
   writePacket(packet, PACKET_LEN);
+  delay(100);
+  writePacket(packet, PACKET_LEN);
   return true;
 }
 
@@ -42,6 +44,8 @@ void HeatPump::sync() {
   //OCM printAllPackets();
   byte packet[PACKET_LEN] = {};
   createInfoPacket(packet);
+  writePacket(packet, PACKET_LEN);
+  delay(100);
   writePacket(packet, PACKET_LEN);
 }
 

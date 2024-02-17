@@ -23,6 +23,10 @@ const char iseeName[] PROGMEM = "isee";
 const char roomTempName[] PROGMEM = "roomtemp";
 const char operatingName[] PROGMEM = "operating";
 
+const char optarifName[] PROGMEM = "OPTARIF";
+const char hchcName[] PROGMEM = "HCHC";
+const char hchpName[] PROGMEM = "HCHP";
+const char ptecName[] PROGMEM = "PTEC";
 const char baseName[] PROGMEM = "BASE";
 const char iinstName[] PROGMEM = "IINST";
 const char pappName[] PROGMEM = "PAPP";
@@ -91,6 +95,22 @@ void loop() {
       case '\r':
       case '\n':
         tic_msg[tic_msg_index] = '\0';
+        if (0 == strncmp_P(tic_msg, optarifName, strnlen_P(optarifName, 50))) {
+          tic_msg[10] = 0;
+          cnc_print_hk_str(optarifName, &tic_msg[8]);
+        }
+        if (0 == strncmp_P(tic_msg, hchcName, strnlen_P(hchcName, 50))) {
+          tic_msg[14] = 0;
+          cnc_print_hk_str(hchcName, &tic_msg[5]);
+        }
+        if (0 == strncmp_P(tic_msg, hchpName, strnlen_P(hchpName, 50))) {
+          tic_msg[14] = 0;
+          cnc_print_hk_str(hchpName, &tic_msg[5]);
+        }
+        if (0 == strncmp_P(tic_msg, ptecName, strnlen_P(ptecName, 50))) {
+          tic_msg[7] = 0;
+          cnc_print_hk_str(ptecName, &tic_msg[5]);
+        }
         if (0 == strncmp_P(tic_msg, baseName, strnlen_P(baseName, 50))) {
           tic_msg[14] = 0;
           cnc_print_hk_str(baseName, &tic_msg[5]);

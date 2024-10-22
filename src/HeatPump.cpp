@@ -7,6 +7,7 @@ HeatPump::HeatPump() {
   infoMode = 0;
   tempMode = false;
   wideVaneAdj = false;
+  healthCount = 0;
   functions = heatpumpFunctions();
 }
 
@@ -159,6 +160,10 @@ float HeatPump::getRoomTemperature() {
 
 bool HeatPump::getOperating() {
   return currentStatus.operating;
+}
+
+uint32_t HeatPump::getHealthCount() {
+  return healthCount;
 }
 
 float HeatPump::FahrenheitToCelsius(int tempF) {
@@ -439,7 +444,9 @@ int HeatPump::readPacket() {
 
 void HeatPump::readAllPackets() {
   while (_HardSerial->available() > 0) {
-    readPacket();
+    if(RCVD_PKT_FAIL != readPacket()) {
+      healthCount++;
+    }
   }
 }
 

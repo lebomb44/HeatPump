@@ -22,6 +22,7 @@ const char wideVaneName[] PROGMEM = "widevane";
 const char iseeName[] PROGMEM = "isee";
 const char roomTempName[] PROGMEM = "roomtemp";
 const char operatingName[] PROGMEM = "operating";
+const char healthCountName[] PROGMEM = "healthcount";
 
 const char optarifName[] PROGMEM = "OPTARIF";
 const char hchcName[] PROGMEM = "HCHC";
@@ -30,6 +31,7 @@ const char ptecName[] PROGMEM = "PTEC";
 const char baseName[] PROGMEM = "BASE";
 const char iinstName[] PROGMEM = "IINST";
 const char pappName[] PROGMEM = "PAPP";
+
 
 char tic_msg[TIC_MAX_MSG_SIZE] = {0};
 uint8_t tic_msg_index = 0;
@@ -86,6 +88,7 @@ void loop() {
     cnc_print_hk_bool(iseeName, hp.getIseeBool());
     cnc_print_hk_float(roomTempName, hp.getRoomTemperature());
     cnc_print_hk_bool(operatingName, hp.getOperating());
+    cnc_print_hk_u32(healthCountName, hp.getHealthCount());
     
     previousTime_10s = currentTime;
   }
@@ -124,6 +127,7 @@ void loop() {
           cnc_print_hk_str(pappName, &tic_msg[5]);
         }
         tic_msg_index = 0;
+        tic_msg[tic_msg_index] = '\0';
         break;
       default:
         // normal character entered. add it to the buffer

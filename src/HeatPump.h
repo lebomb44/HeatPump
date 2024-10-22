@@ -150,6 +150,7 @@ class HeatPump
     int infoMode;
     bool tempMode;
     bool wideVaneAdj;
+    uint32_t healthCount;
 
     const char* lookupByteMapValue(const char* valuesMap[], const byte byteMap[], int len, byte byteValue);
     int    lookupByteMapValue(const int valuesMap[], const byte byteMap[], int len, byte byteValue);
@@ -201,6 +202,7 @@ class HeatPump
     float getRoomTemperature();
     bool getOperating();
     bool isConnected();
+    uint32_t getHealthCount();
 
     // functions
     // NOTE: These methods have been tested with a PVA (P-series air handler) unit and has not been tested with anything else. Use at your own risk.

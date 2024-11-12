@@ -46,7 +46,7 @@ void HeatPump::sync() {
   byte packet[PACKET_LEN] = {};
   createInfoPacket(packet);
   writePacket(packet, PACKET_LEN);
-  delay(100);
+  delay(500);
   writePacket(packet, PACKET_LEN);
 }
 
@@ -309,6 +309,7 @@ int HeatPump::readPacket() {
     }
 
     if(!foundStart) {
+      Serial.println("heatpump start not found");
       return RCVD_PKT_FAIL;
     }
     //read header

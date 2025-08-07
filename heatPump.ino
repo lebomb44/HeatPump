@@ -32,6 +32,12 @@ const char eastName[] PROGMEM = "EAST";
 const char irms1Name[] PROGMEM = "IRMS1";
 const char urms1Name[] PROGMEM = "URMS1";
 const char sinstsName[] PROGMEM = "SINSTS";
+const char stgeName[] PROGMEM = "STGE";
+const char contactTICName[] PROGMEM = "contacttic";
+const char protectTICName[] PROGMEM = "protecttic";
+const char ovTICName[] PROGMEM = "ovtic";
+const char opTICName[] PROGMEM = "optic";
+const char injectionTICName[] PROGMEM = "injecttic";
 const char healthTICName[] PROGMEM = "healthtic";
 
 const char boilerPowerName[] PROGMEM = "boilerpower";
@@ -63,22 +69,23 @@ void boilerPower_cmdSet(int arg_cnt, char **args) {
 
 ISR(TIMER1_OVF_vect) {
   TCCR1B = B00000000;  // Stop timer
-  digitalWrite(BOILER_POWER_PIN_OUT, LOW);
+  digitalWrite(BOILER_POWER_PIN_OUT, HIGH);
 }
 
 void zero_crossing() {
   TCCR1B = B00000000;  // Stop timer
-  TCNT1 = 65535 - (boiler_power * 10);            // Timer Preloading
+  digitalWrite(BOILER_POWER_PIN_OUT, LOW);
+
+  uint16_t _boiler_power = 0;
+  if((0 <= boiler_power) && (boiler_power <= 2000)) {
+    _boiler_power = boiler_power;
+  }
+
+  TCNT1 = 65535 - (20000 - (_boiler_power * 10));            // Timer Preloading
   // 0W    -> 0ms  = 0
   // 1000W -> 5ms  = 10000ticks
   // 2000W -> 10ms = 20000ticks
-  if(boiler_power > 0) {
-    digitalWrite(BOILER_POWER_PIN_OUT, HIGH);
-    TCCR1B = B00000010;  // Start timer clk_16Mhz/8
-  }
-  else {
-    digitalWrite(BOILER_POWER_PIN_OUT, LOW);
-  }
+  TCCR1B = B00000010;  // Start timer clk_16Mhz/8
 }
 
 void setup() {
@@ -179,6 +186,18 @@ void loop() {
           tic_health_count++;
           tic_msg[12] = 0;
           cnc_print_hk_str(sinstsName, &tic_msg[7]);
+        }
+        if (0 == strncmp_P(tic_msg, stgeName, strnlen_P(stgeName, 50))) {
+          tic_health_count++;
+          tic_msg[13] = 0;
+          cnc_print_hk_str(stgeName, &tic_msg[5]);
+          uint32_t stge = 0;
+          stge = strtoul(&tic_msg[5], NULL, 16);
+          cnc_print_hk_bool(contactTICName, !(stge & 0x00000001));
+          cnc_print_hk_u32(protectTICName, (stge >> 1) & 0x00000007);
+          cnc_print_hk_bool(ovTICName, (stge >> 6) & 0x00000001);
+          cnc_print_hk_bool(opTICName, (stge >> 7) & 0x00000001);
+          cnc_print_hk_bool(injectionTICName, (stge >> 9) & 0x00000001);
         }
         tic_msg_index = 0;
         tic_msg[tic_msg_index] = '\0';

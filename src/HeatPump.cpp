@@ -13,7 +13,13 @@ HeatPump::HeatPump() {
 
 // Public Methods //////////////////////////////////////////////////////////////
 
-bool HeatPump::connect(HardwareSerial *serial) {
+bool HeatPump::init(HardwareSerial *serial) {
+  currentSettings.power = UNKNOWN;
+  currentSettings.mode = UNKNOWN;
+  currentSettings.fan = UNKNOWN;
+  currentSettings.vane = UNKNOWN;
+  currentSettings.wideVane = UNKNOWN;
+
   if(serial != NULL) {
     _HardSerial = serial;
   }
@@ -21,7 +27,10 @@ bool HeatPump::connect(HardwareSerial *serial) {
   
   // settle before we start sending packets
   delay(2000);
+  return true;
+}
 
+bool HeatPump::connect() {
   // send the CONNECT packet twice - need to copy the CONNECT packet locally
   byte packet[CONNECT_LEN];
   memcpy(packet, CONNECT, CONNECT_LEN);

@@ -5,6 +5,7 @@
 #define __HEATPUMP__
 #define __TIC__
 #define __BOILER__
+#define __GRID_VOLTAGE_CURRENT__
 
 #ifdef __TIC__
 #define TIC_MAX_MSG_SIZE 25
@@ -12,6 +13,12 @@
 #ifdef __BOILER__
 #define BOILER_POWER_PIN_OUT 11
 #define BOILER_POWER_PIN_IN 2
+#endif
+#ifdef __GRID_VOLTAGE_CURRENT__
+#define GRID_VOLTAGE_PIN A0
+#define GRID_CURRENT_PIN A1
+#define GRID_HALF_PERIOD_SAMPLES_NB 45
+#define GRID_SAMPLES_NB (GRID_HALF_PERIOD_SAMPLES_NB*9)
 #endif
 
 #ifdef __HEATPUMP__
@@ -60,9 +67,21 @@ const char boilerAutoFloorName[] PROGMEM = "boilerautofloor";
 const uint16_t boiler_timesOn[] PROGMEM = {0,50,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800,850,900,950,1000,1050,1100,1150,1200,1250,1300,1350,1400,1450,1500,1550,1600,1650,1700,1750,1800,1850,1900,1950,2000};
 const uint16_t boiler_powers[] PROGMEM = {0,22,53,101,156,220,294,379,469,562,655,747,849,938,1033,1120,1201,1281,1342,1424,1495,1563,1636,1695,1750,1810,1855,1895,1910,1935,1950,1980,2000,2000,2000,2015,2015,2017,2020,2025,2027};
 #endif
+#ifdef __GRID_VOLTAGE_CURRENT__
+const char gridVoltageRefName[] PROGMEM = "gridvoltageref";
+const char gridVoltageEffName[] PROGMEM = "gridvoltageeff";
+const char gridCurrentRefName[] PROGMEM = "gridcurrentref";
+const char gridPowerName[] PROGMEM = "gridpower";
+const char gridPowerConsoName[] PROGMEM = "gridpowerconso";
+const char gridPowerInjectName[] PROGMEM = "gridpowerinject";
+const char gridInjectName[] PROGMEM = "gridinject";
+const char gridHealthName[] PROGMEM = "gridhealth";
+#endif
 #ifdef __TIC__
+char tic_c = 0;
 char tic_msg[TIC_MAX_MSG_SIZE] = {0};
 uint8_t tic_msg_index = 0;
+uint8_t tic_checksum = 0;
 uint32_t tic_health_count = 0;
 uint32_t tic_irms1 = 0;
 uint32_t tic_urms1 = 0;
@@ -70,10 +89,20 @@ uint32_t tic_urms1 = 0;
 #ifdef __BOILER__
 uint16_t boiler_timeOn = 0;
 uint16_t boiler_power = 0;
-bool boiler_auto = true;
-uint16_t boiler_auto_floor = 700;
+uint8_t boiler_auto = 2;
+uint16_t boiler_auto_floor = 200;
+#endif
+#ifdef __GRID_VOLTAGE_CURRENT__
+volatile int32_t grid_voltage[GRID_SAMPLES_NB] = {0};
+volatile int32_t grid_current[GRID_SAMPLES_NB] = {0};
+volatile int32_t grid_power = 0;
+volatile uint32_t grid_power_conso = 0;
+volatile uint32_t grid_power_inject = 0;
+volatile bool grid_inject = false;
+volatile uint32_t grid_health_count = 0;
 #endif
 uint32_t previousTime_10s = 0;
+uint32_t previousTime_60s = 0;
 uint32_t currentTime = 0;
 
 void ping_cmdGet(int arg_cnt, char **args) { cnc_print_cmdGet_u32(pingName, currentTime); }
@@ -132,11 +161,8 @@ void boilerAuto_cmdSet(int arg_cnt, char **args) {
   uint16_t _auto = 0;
   if(4 == arg_cnt) {
     _auto = strtoul(args[3], NULL, 10);
-    if(1 == _auto) {
-      boiler_auto = true;
-    }
-    else {
-      boiler_auto = false;
+    if((0 <= _auto) && (_auto <=2)) {
+      boiler_auto = _auto;
     }
   }
 }
@@ -158,10 +184,13 @@ ISR(TIMER1_OVF_vect) {
 }
 
 void zero_crossing() {
+  uint16_t _boiler_timeOn = 0;
+  uint8_t lowADC = 0;
+  uint8_t highADC = 0;
+
   TCCR1B = B00000000;  // Stop timer
   digitalWrite(BOILER_POWER_PIN_OUT, LOW);
 
-  uint16_t _boiler_timeOn = 0;
   if((0 <= boiler_timeOn) && (boiler_timeOn <= 2000)) {
     _boiler_timeOn = boiler_timeOn;
   }
@@ -173,6 +202,8 @@ void zero_crossing() {
     // 2000W -> 10ms = 20000ticks
     TCCR1B = B00000010;  // Start timer clk_16Mhz/8
   }
+
+  grid_health_count++;
 }
 #endif
 
@@ -196,15 +227,28 @@ void setup() {
   cnc_cmdSet_Add(boilerAutoFloorName, boilerAutoFloor_cmdSet);
 #endif
   previousTime_10s = millis();
+  previousTime_60s = millis();
 #ifdef __HEATPUMP__
   pinMode(18, OUTPUT);
   pinMode(19, INPUT_PULLUP);
-  hp.connect(&Serial1);
+  hp.init(&Serial1);
+  hp.connect();
+#endif
+#ifdef __GRID_VOLTAGE_CURRENT__
+  pinMode(GRID_VOLTAGE_PIN, INPUT);
+  pinMode(GRID_CURRENT_PIN, INPUT);
+  grid_power = 0;
+  grid_power_conso = 0;
+  grid_power_inject = 0;
+  grid_inject = false;
+  grid_health_count = 0;
 #endif
   delay(1000);
   Serial.begin(115200);
 #ifdef __TIC__
+  tic_c = 0;
   tic_msg_index = 0;
+  tic_checksum = 0;
   tic_health_count = 0;
   tic_irms1 = 0;
   tic_urms1 = 0;
@@ -217,8 +261,8 @@ void setup() {
 #ifdef __BOILER__
   boiler_timeOn = 0;
   boiler_power = 0;
-  boiler_auto = true;
-  boiler_auto_floor = 700;
+  boiler_auto = 2;
+  boiler_auto_floor = 200;
 
   pinMode(BOILER_POWER_PIN_OUT, OUTPUT);
   digitalWrite(BOILER_POWER_PIN_OUT, LOW);
@@ -236,7 +280,7 @@ void loop() {
   /* HK @ 0.5Hz */
   if((uint32_t)(currentTime - previousTime_10s) >= 2000) {
 #ifdef __HEATPUMP__
-    hp.sync();
+    hp.sync(); cncPoll();
     cnc_print_hk_str(powerName, hp.getPowerSetting());
     cnc_print_hk_str(modeName, hp.getModeSetting());
     cnc_print_hk_float(tempName, hp.getTemperature());
@@ -256,22 +300,83 @@ void loop() {
 #ifdef __TIC__
     cnc_print_hk_u32(healthTICName, tic_health_count);
 #endif
+#ifdef __GRID_VOLTAGE_CURRENT__
+    volatile uint32_t t_before = 0;
+    volatile uint32_t t_after = 0;
+    t_before = millis();
+    for(uint16_t i=0; i<(GRID_SAMPLES_NB); i++) {
+      grid_voltage[i] = analogRead(GRID_VOLTAGE_PIN);
+      grid_current[i] = analogRead(GRID_CURRENT_PIN);
+    }
+    t_after = millis();
+    //Serial.print("####### T="); Serial.println(t_after - t_before);
+    uint32_t _voltageMean = 0;
+    uint32_t _currentMean = 0;
+    for(uint16_t i=0; i<GRID_SAMPLES_NB; i++) {
+      _voltageMean = _voltageMean + grid_voltage[i];
+      _currentMean = _currentMean + grid_current[i];
+    }
+    _voltageMean = _voltageMean / GRID_SAMPLES_NB;
+    _currentMean = _currentMean / GRID_SAMPLES_NB;
+    //Serial.print("####### vMean="); Serial.println(_voltageMean);
+    //Serial.print("####### iMean="); Serial.println(_currentMean);
+    for(uint16_t i=0; i<GRID_SAMPLES_NB; i++) {
+      grid_voltage[i] = grid_voltage[i] - _voltageMean;
+      grid_current[i] = grid_current[i] - _currentMean;
+    }
+
+    uint8_t zero_crossing = 0;
+    for(uint16_t i=GRID_HALF_PERIOD_SAMPLES_NB; i<(GRID_HALF_PERIOD_SAMPLES_NB*4); i++) {
+      if((0 > grid_voltage[i]) && (0 > grid_voltage[i+1]) && (0 <= grid_voltage[i+2])) {
+        zero_crossing = i+2;
+        break;
+      }
+    }
+    grid_power = 0;
+    uint32_t _voltageEff = 0;
+    int32_t _power = 0;
+    for(uint16_t i=zero_crossing; i<(zero_crossing+(GRID_HALF_PERIOD_SAMPLES_NB*4)); i++) {
+      _voltageEff = _voltageEff + abs(grid_voltage[i]);
+      _power = grid_voltage[i] * grid_current[i];
+      //Serial.print("####### @="); Serial.print(i); Serial.print(" V="); Serial.print(grid_voltage[i]); Serial.print(" I="); Serial.println(grid_current[i]);
+      grid_power = grid_power + _power;
+    }
+    _voltageEff = (_voltageEff * 10) / 1784;
+    if(0 > grid_power) { grid_inject = true; } else { grid_inject = false; }
+    grid_power = abs(grid_power);
+    grid_power = grid_power / 221;
+    if(true == grid_inject) { grid_power_conso = 0; grid_power_inject = grid_power; }
+    else { grid_power_conso = grid_power; grid_power_inject = 0; }
+    cnc_print_hk_u32(gridVoltageRefName, _voltageMean);
+    cnc_print_hk_u32(gridVoltageEffName, _voltageEff);
+    cnc_print_hk_u32(gridCurrentRefName, _currentMean);
+    cnc_print_hk_u32(gridPowerName, grid_power);
+    cnc_print_hk_u32(gridPowerConsoName, grid_power_conso);
+    cnc_print_hk_u32(gridPowerInjectName, grid_power_inject);
+    cnc_print_hk_bool(gridInjectName, grid_inject);
+    cnc_print_hk_u32(gridHealthName, grid_health_count);
+#endif
+
     previousTime_10s = currentTime;
+  }
+  if((uint32_t)(currentTime - previousTime_60s) >= 60000) {
+    hp.connect(); cncPoll();
+    previousTime_60s = currentTime;
   }
 #ifdef __TIC__
   while (Serial2.available() > 0) {
-    char c = Serial2.read();
-    //Serial.write(c);
-    switch (c) {
+    tic_c = Serial2.read(); cncPoll();
+    //Serial.write(tic_c);
+    switch (tic_c) {
       case '\r':
       case '\n':
         tic_msg[tic_msg_index] = '\0';
         if (tic_msg_index > 4) {
-          uint8_t _tic_checksum = 0;
+          tic_checksum = 0;
           for (uint8_t i=0; i<(tic_msg_index-1); i++) {
-            _tic_checksum = _tic_checksum + tic_msg[i];
+            tic_checksum = tic_checksum + tic_msg[i];
           }
-          if (tic_msg[tic_msg_index-1] == ((_tic_checksum & 0x3F) + 0x20)) {
+          if (tic_msg[tic_msg_index-1] == ((tic_checksum & 0x3F) + 0x20)) {
             if (0 == strncmp_P(tic_msg, ltarfName, strnlen_P(ltarfName, 50))) {
               tic_health_count++;
               tic_msg[20] = 0;
@@ -318,12 +423,19 @@ void loop() {
               _tic_inject = (stge >> 9) & 0x00000001;
               cnc_print_hk_bool(injectionTICName, _tic_inject);
 #ifdef __BOILER__
-              if(true == boiler_auto) {
+              if(0 < boiler_auto) {
                 if(true == _tic_inject) {
                   //int32_t delta_power = (tic_irms1 * tic_urms1) - boiler_auto_floor;
                   //boiler_power_set(((int32_t)boiler_power) + (delta_power/3));
                   int32_t delta_power = 0;
-                  delta_power = (tic_irms1 * tic_urms1);
+                  if(1 == boiler_auto) {
+                    delta_power = (tic_irms1 * tic_urms1);
+                  }
+#ifdef __GRID_VOLTAGE_CURRENT__
+                  if(2 == boiler_auto) {
+                    delta_power = grid_power;
+                  }
+#endif
                   if(delta_power > boiler_auto_floor) {
                     boiler_power_set(((int32_t)boiler_power) + 1);
                   }
@@ -332,7 +444,6 @@ void loop() {
                   }
                 }
                 else {
-                  //boiler_power_set(0);
                   boiler_power_set(((int32_t)boiler_power) - 10);
                 }
               }
@@ -346,7 +457,7 @@ void loop() {
       default:
         // normal character entered. add it to the buffer
         if((TIC_MAX_MSG_SIZE-1) > tic_msg_index) {
-            tic_msg[tic_msg_index] = c;
+            tic_msg[tic_msg_index] = tic_c;
             tic_msg_index++;
         }
         break;

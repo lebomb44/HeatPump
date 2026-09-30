@@ -137,6 +137,8 @@ class HeatPump
     const byte FUNCTIONS_SET_PART2 = 0x21;
     const byte FUNCTIONS_GET_PART2 = 0x22;
 
+    const char* UNKNOWN  = "UNKNOWN";
+
     // these settings will be initialised in connect()
     heatpumpSettings currentSettings {};
     heatpumpSettings wantedSettings {};
@@ -176,7 +178,8 @@ class HeatPump
 
     // general
     HeatPump();
-    bool connect(HardwareSerial *serial);
+    bool init(HardwareSerial *serial);
+    bool connect();
     bool update();
     void sync();
 
